@@ -23,9 +23,13 @@ enum class State : uint8_t { Title, Playing, Win };
 namespace {
 
 // 30 cols x 15 rows = 240x120 px game area below the 12px HUD.
-// '#' wall, '.' open, 'S' start, 'E' exit. The path is a serpentine
-// with two-cell gaps so the ball comfortably passes through.
-const char* kMaze[] = {
+// '#' wall, '.' open, 'S' start, 'E' exit. Each stage uses the same
+// dimensions; corridors are 1 cell (8 px) wide, just larger than the
+// 6 px ball.
+constexpr int kRows = 15;
+constexpr int kCols = 30;
+
+const char* kStage1[kRows] = {
   "##############################",
   "#S...........................#",
   "#..###########################",
@@ -42,9 +46,51 @@ const char* kMaze[] = {
   "#...........................E#",
   "##############################",
 };
-constexpr int kRows = sizeof(kMaze) / sizeof(kMaze[0]);
-constexpr int kCols = 30;
 
+// Comb teeth: short walls with 1-cell gaps offset row-to-row, forcing
+// the ball to zigzag through the open corridors between teeth rows.
+const char* kStage2[kRows] = {
+  "##############################",
+  "#S...........................#",
+  "##.##.##.##.##.##.##.##.##.###",
+  "#............................#",
+  "###.##.##.##.##.##.##.##.##.##",
+  "#............................#",
+  "##.##.##.##.##.##.##.##.##.###",
+  "#............................#",
+  "###.##.##.##.##.##.##.##.##.##",
+  "#............................#",
+  "##.##.##.##.##.##.##.##.##.###",
+  "#............................#",
+  "###.##.##.##.##.##.##.##.##.##",
+  "#...........................E#",
+  "##############################",
+};
+
+// Reverse serpentine: starts top-right and snakes down to bottom-left.
+const char* kStage3[kRows] = {
+  "##############################",
+  "#...........................S#",
+  "###########################..#",
+  "#............................#",
+  "#..###########################",
+  "#............................#",
+  "###########################..#",
+  "#............................#",
+  "#..###########################",
+  "#............................#",
+  "###########################..#",
+  "#............................#",
+  "#..###########################",
+  "#E...........................#",
+  "##############################",
+};
+
+constexpr int kStageCount = 3;
+const char* const* const kStages[kStageCount] = {kStage1, kStage2, kStage3};
+
+const char* const* maze;
+int      current_stage;
 float    bx, by, vx, vy;
 int      start_cx, start_cy;
 int      exit_cx,  exit_cy;
@@ -54,16 +100,17 @@ bool     imu_ok;
 
 bool isWall(int cx, int cy) {
   if (cx < 0 || cy < 0 || cx >= kCols || cy >= kRows) return true;
-  return kMaze[cy][cx] == '#';
+  return maze[cy][cx] == '#';
 }
 
 void resetGame() {
+  maze = kStages[current_stage];
   start_cx = exit_cx = 1;
   start_cy = 1;
   exit_cy  = kRows - 2;
   for (int y = 0; y < kRows; ++y) {
     for (int x = 0; x < kCols; ++x) {
-      char c = kMaze[y][x];
+      char c = maze[y][x];
       if (c == 'S') { start_cx = x; start_cy = y; }
       else if (c == 'E') { exit_cx = x; exit_cy = y; }
     }
@@ -158,14 +205,15 @@ void drawScene() {
   c.setTextSize(1);
   uint32_t elapsed = (finish_ms ? finish_ms : millis()) - start_ms;
   char buf[32];
-  snprintf(buf, sizeof(buf), "TILT MAZE  %lu.%02lus",
+  snprintf(buf, sizeof(buf), "TILT MAZE  L%d  %lu.%02lus",
+           current_stage + 1,
            (unsigned long)(elapsed / 1000),
            (unsigned long)((elapsed / 10) % 100));
   c.drawString(buf, 4, 2);
 
   for (int y = 0; y < kRows; ++y) {
     for (int x = 0; x < kCols; ++x) {
-      char ch = kMaze[y][x];
+      char ch = maze[y][x];
       int px = x * kCell;
       int py = kHudHeight + y * kCell;
       if (ch == '#') {
@@ -185,6 +233,7 @@ void drawScene() {
 
 void enter() {
   imu_ok = (M5.Imu.getType() != m5::imu_none);
+  current_stage = 0;
   state = State::Title;
   resetGame();
 }
@@ -202,6 +251,7 @@ bool tick() {
   switch (state) {
     case State::Title:
       if (M5.BtnA.wasPressed() || M5.BtnB.wasPressed()) {
+        current_stage = 0;
         resetGame();
         state = State::Playing;
       }
@@ -211,8 +261,15 @@ bool tick() {
       break;
     case State::Win:
       if (M5.BtnA.wasPressed() || M5.BtnB.wasPressed()) {
-        resetGame();
-        state = State::Title;
+        if (current_stage + 1 >= kStageCount) {
+          current_stage = 0;
+          resetGame();
+          state = State::Title;
+        } else {
+          current_stage++;
+          resetGame();
+          state = State::Playing;
+        }
       }
       break;
   }
@@ -221,8 +278,12 @@ bool tick() {
 
   if (state == State::Title)
     gfx::drawCenteredText("TILT MAZE", "tilt to roll - press to start", kBg);
-  else if (state == State::Win)
-    gfx::drawCenteredText("YOU WIN!", "press to retry - hold B to exit", kBg);
+  else if (state == State::Win) {
+    if (current_stage + 1 >= kStageCount)
+      gfx::drawCenteredText("ALL CLEAR!", "press to restart - hold B to exit", kBg);
+    else
+      gfx::drawCenteredText("STAGE CLEAR!", "press for next stage", kBg);
+  }
 
   return true;
 }

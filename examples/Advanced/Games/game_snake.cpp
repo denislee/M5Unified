@@ -163,8 +163,8 @@ bool tick() {
       }
       break;
     case State::Playing:
-      if (M5.BtnA.wasPressed()) turnLeft();
-      else if (M5.BtnB.wasPressed()) turnRight();
+      if (M5.BtnA.wasPressed()) turnRight();
+      else if (M5.BtnB.wasPressed()) turnLeft();
 
       if (++frame_counter >= step_frames) {
         frame_counter = 0;

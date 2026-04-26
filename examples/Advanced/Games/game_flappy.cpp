@@ -6,20 +6,27 @@ constexpr float    kGravity      = 0.32f;
 constexpr float    kFlapVelocity = -3.6f;
 constexpr float    kMaxFallSpeed = 5.0f;
 constexpr float    kPipeSpeed    = 1.6f;
-constexpr int      kPipeWidth    = 18;
-constexpr int      kPipeGap      = 46;
-constexpr int      kPipeSpacing  = 78;
+constexpr int      kPipeWidth    = 24;
+constexpr int      kPipeGap      = 54;
+constexpr int      kPipeSpacing  = 86;
 constexpr int      kPipeCount    = 4;
-constexpr int      kBirdRadius   = 5;
+constexpr int      kBirdRadius   = 6;
 
-constexpr uint16_t kSky      = 0x6D9F;
-constexpr uint16_t kGround   = 0xDE0B;
-constexpr uint16_t kGrass    = 0x6E45;
-constexpr uint16_t kPipe     = 0x4644;
-constexpr uint16_t kPipeEdge = 0x2322;
-constexpr uint16_t kBird     = 0xFEC0;
-constexpr uint16_t kBirdEdge = 0x0000;
-constexpr uint16_t kBeak     = 0xF800;
+// Enhanced Color Palette
+constexpr uint16_t kSky        = 0x6D9F;
+constexpr uint16_t kGround     = 0xDE0B;
+constexpr uint16_t kGroundDark = 0xBA08;
+constexpr uint16_t kGrass      = 0x6E45;
+constexpr uint16_t kGrassDark  = 0x4D03;
+constexpr uint16_t kPipe       = 0x4644;
+constexpr uint16_t kPipeHigh   = 0x6706;
+constexpr uint16_t kPipeEdge   = 0x2322;
+constexpr uint16_t kBird       = 0xFEC0;
+constexpr uint16_t kBirdShadow = 0xFA00;
+constexpr uint16_t kBirdEdge   = 0x0000;
+constexpr uint16_t kBeak       = 0xFC00;
+constexpr uint16_t kCloud      = 0xFFFF;
+constexpr uint16_t kSun        = 0xFFE0;
 
 struct Pipe {
   float x;
@@ -36,6 +43,7 @@ int      bird_x;
 int      ground_y;
 Pipe     pipes[kPipeCount];
 int      score, best;
+float    ground_x = 0;
 
 bool flapPressed() {
   return M5.BtnA.wasPressed() || M5.BtnB.wasPressed();
@@ -50,46 +58,72 @@ void resetPipes() {
 }
 
 void resetGame() {
-  bird_x  = gfx::screen_w / 3;
-  bird_y  = gfx::screen_h / 2.0f;
-  bird_vy = 0.0f;
-  score   = 0;
+  bird_x   = gfx::screen_w / 3;
+  bird_y   = gfx::screen_h / 2.0f;
+  bird_vy  = 0.0f;
+  score    = 0;
+  ground_x = 0;
   resetPipes();
 }
 
 void drawBird(int x, int y, float vy) {
-  gfx::canvas.fillCircle(x, y, kBirdRadius, kBird);
+  // Shadow / bottom of body
+  gfx::canvas.fillCircle(x, y, kBirdRadius, kBirdShadow);
+  gfx::canvas.fillCircle(x, y - 1, kBirdRadius - 1, kBird);
   gfx::canvas.drawCircle(x, y, kBirdRadius, kBirdEdge);
-  gfx::canvas.fillCircle(x + 2, y - 1, 1, kBirdEdge);
+  
+  // Eye
+  gfx::canvas.fillCircle(x + 2, y - 2, 2, TFT_WHITE);
+  gfx::canvas.drawPixel(x + 3, y - 2, kBirdEdge); // Pupil
+  
+  // Beak
   int beak_dy = (vy > 0) ? 1 : (vy < -1.5f ? -1 : 0);
   gfx::canvas.fillTriangle(x + kBirdRadius - 1, y - 1 + beak_dy,
-                           x + kBirdRadius - 1, y + 1 + beak_dy,
-                           x + kBirdRadius + 3, y     + beak_dy,
+                           x + kBirdRadius - 1, y + 3 + beak_dy,
+                           x + kBirdRadius + 5, y + 1 + beak_dy,
                            kBeak);
-  gfx::canvas.fillRect(x - 3, y, 4, 2, kBirdEdge);
+  gfx::canvas.drawTriangle(x + kBirdRadius - 1, y - 1 + beak_dy,
+                           x + kBirdRadius - 1, y + 3 + beak_dy,
+                           x + kBirdRadius + 5, y + 1 + beak_dy,
+                           kBirdEdge);
+                           
+  // Wing (animates based on velocity)
+  int wing_dy = (vy < -1.0f) ? -2 : ((vy > 1.5f) ? 2 : 0);
+  gfx::canvas.fillRoundRect(x - 4, y + wing_dy, 6, 4, 2, TFT_WHITE);
+  gfx::canvas.drawRoundRect(x - 4, y + wing_dy, 6, 4, 2, kBirdEdge);
+}
+
+void drawPipeBody(int x, int y, int w, int h) {
+  if (h <= 0) return;
+  gfx::canvas.fillRect(x, y, w, h, kPipe);
+  gfx::canvas.fillRect(x + 2, y, w / 4, h, kPipeHigh); // Highlight
+  gfx::canvas.drawRect(x, y, w, h, kPipeEdge);
 }
 
 void drawPipe(const Pipe& p) {
   int x = (int)p.x;
-  if (x + kPipeWidth < 0 || x > gfx::screen_w) return;
+  if (x + kPipeWidth < -4 || x > gfx::screen_w) return;
 
-  gfx::canvas.fillRect(x, 0, kPipeWidth, p.gap_y, kPipe);
-  gfx::canvas.drawRect(x, 0, kPipeWidth, p.gap_y, kPipeEdge);
-  gfx::canvas.fillRect(x - 2, p.gap_y - 6, kPipeWidth + 4, 6, kPipe);
-  gfx::canvas.drawRect(x - 2, p.gap_y - 6, kPipeWidth + 4, 6, kPipeEdge);
+  // Top pipe
+  drawPipeBody(x, 0, kPipeWidth, p.gap_y - 8);
+  // Top pipe cap
+  drawPipeBody(x - 2, p.gap_y - 8, kPipeWidth + 4, 8);
 
+  // Bottom pipe
   int by = p.gap_y + kPipeGap;
   int bh = ground_y - by;
-  gfx::canvas.fillRect(x, by, kPipeWidth, bh, kPipe);
-  gfx::canvas.drawRect(x, by, kPipeWidth, bh, kPipeEdge);
-  gfx::canvas.fillRect(x - 2, by, kPipeWidth + 4, 6, kPipe);
-  gfx::canvas.drawRect(x - 2, by, kPipeWidth + 4, 6, kPipeEdge);
+  // Bottom pipe cap
+  drawPipeBody(x - 2, by, kPipeWidth + 4, 8);
+  // Bottom pipe body
+  drawPipeBody(x, by + 8, kPipeWidth, bh - 8);
 }
 
 bool collides(const Pipe& p) {
-  int bx0 = bird_x - kBirdRadius, bx1 = bird_x + kBirdRadius;
-  int by0 = (int)bird_y - kBirdRadius, by1 = (int)bird_y + kBirdRadius;
+  // Hitbox slightly smaller than visual bird bounds
+  int bx0 = bird_x - kBirdRadius + 1, bx1 = bird_x + kBirdRadius - 1;
+  int by0 = (int)bird_y - kBirdRadius + 1, by1 = (int)bird_y + kBirdRadius - 1;
   int px  = (int)p.x;
+  
   if (bx1 < px || bx0 > px + kPipeWidth) return false;
   if (by0 < p.gap_y) return true;
   if (by1 > p.gap_y + kPipeGap) return true;
@@ -102,6 +136,9 @@ void stepPlaying() {
   bird_vy += kGravity;
   if (bird_vy > kMaxFallSpeed) bird_vy = kMaxFallSpeed;
   bird_y  += bird_vy;
+
+  ground_x -= kPipeSpeed;
+  if (ground_x <= -20) ground_x += 20;
 
   if (bird_y + kBirdRadius >= ground_y) {
     bird_y = ground_y - kBirdRadius;
@@ -117,7 +154,7 @@ void stepPlaying() {
 
   for (int i = 0; i < kPipeCount; ++i) {
     pipes[i].x -= kPipeSpeed;
-    if (pipes[i].x + kPipeWidth < 0) {
+    if (pipes[i].x + kPipeWidth < -4) {
       float max_x = pipes[0].x;
       for (int j = 1; j < kPipeCount; ++j) if (pipes[j].x > max_x) max_x = pipes[j].x;
       pipes[i].x      = max_x + kPipeSpacing;
@@ -139,12 +176,30 @@ void stepPlaying() {
 }
 
 void drawScene() {
+  // Sky
   gfx::canvas.fillRect(0, 0, gfx::screen_w, ground_y, kSky);
+  
+  // Pipes
   for (int i = 0; i < kPipeCount; ++i) drawPipe(pipes[i]);
+  
+  // Ground
   gfx::canvas.fillRect(0, ground_y, gfx::screen_w, 4, kGrass);
   gfx::canvas.fillRect(0, ground_y + 4, gfx::screen_w, gfx::screen_h - ground_y - 4, kGround);
+  
+  // Ground scrolling pattern (stripes)
+  for (int x = (int)ground_x; x < gfx::screen_w + 20; x += 20) {
+    gfx::canvas.drawLine(x, ground_y + 4, x - 10, gfx::screen_h, kGroundDark);
+    gfx::canvas.drawLine(x + 1, ground_y + 4, x - 9, gfx::screen_h, kGroundDark);
+  }
+  // Grass scrolling trim
+  for (int x = (int)ground_x; x < gfx::screen_w + 20; x += 10) {
+    gfx::canvas.drawLine(x, ground_y, x + 4, ground_y + 3, kGrassDark);
+  }
+  
+  // Bird
   drawBird(bird_x, (int)bird_y, bird_vy);
 
+  // Score
   gfx::canvas.setTextColor(TFT_WHITE, kSky);
   gfx::canvas.setTextDatum(top_center);
   gfx::canvas.setTextSize(2);
@@ -153,7 +208,7 @@ void drawScene() {
 }  // namespace
 
 void enter() {
-  ground_y = gfx::screen_h - 15;
+  ground_y = gfx::screen_h - 20;
   state    = State::Title;
   resetGame();
 }
