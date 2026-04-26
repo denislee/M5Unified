@@ -17,3 +17,5 @@ namespace snake    { void enter(); bool tick(); }
 namespace tilt     { void enter(); bool tick(); }
 namespace breakout { void enter(); bool tick(); }
 namespace dino     { void enter(); bool tick(); }
+namespace pong     { void enter(); bool tick(); }
+namespace stacker  { void enter(); bool tick(); }

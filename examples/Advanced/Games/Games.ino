@@ -6,6 +6,8 @@
 //   - Tilt Maze   (tilt the device to roll the ball to the exit)
 //   - Breakout    (BtnB = paddle left, BtnA = paddle right)
 //   - T-Rex Run   (press any button to jump over cacti)
+//   - Pong        (BtnA = paddle up, BtnB = paddle down; first to 5)
+//   - Stacker     (BtnA/BtnB = drop the moving block onto the tower)
 //
 // Global controls (work in any game and in the menu):
 //   BtnPWR tap  : power off the device (AXP192/AXP2101 PMU)
@@ -48,6 +50,8 @@ namespace snake    { void enter(); bool tick(); }
 namespace tilt     { void enter(); bool tick(); }
 namespace breakout { void enter(); bool tick(); }
 namespace dino     { void enter(); bool tick(); }
+namespace pong     { void enter(); bool tick(); }
+namespace stacker  { void enter(); bool tick(); }
 
 const Game kGames[] = {
   { "Flappy Bird", flappy::enter,   flappy::tick   },
@@ -55,6 +59,8 @@ const Game kGames[] = {
   { "Tilt Maze",   tilt::enter,     tilt::tick     },
   { "Breakout",    breakout::enter, breakout::tick },
   { "T-Rex Run",   dino::enter,     dino::tick     },
+  { "Pong",        pong::enter,     pong::tick     },
+  { "Stacker",     stacker::enter,  stacker::tick  },
 };
 constexpr int kGameCount = sizeof(kGames) / sizeof(kGames[0]);
 
@@ -84,24 +90,66 @@ bool tick() {
   c.setTextSize(2);
   c.drawString("M5 Arcade", gfx::screen_w / 2, 6);
 
+  int bat = M5.Power.getBatteryLevel();
+  if (bat >= 0) {
+    char buf[12];
+    bool charging = (M5.Power.isCharging() == 1);
+    snprintf(buf, sizeof(buf), "%s%d%%", charging ? "+" : "", bat);
+    uint16_t color = (bat <= 20) ? TFT_RED
+                   : (bat <= 50) ? TFT_YELLOW
+                                 : TFT_GREEN;
+    c.setTextSize(1);
+    c.setTextDatum(top_right);
+    c.setTextColor(color);
+    c.drawString(buf, gfx::screen_w - 4, 4);
+  }
+
   c.setTextSize(1);
   c.setTextDatum(top_left);
-  int y = 36;
-  for (int i = 0; i < kGameCount; ++i) {
+  const int help_top = gfx::screen_h - 18;
+  const int list_top = 42;
+  const int list_avail = help_top - list_top - 2;
+  const int row_h = 14;
+  int max_visible = list_avail / row_h;
+  if (max_visible < 1) max_visible = 1;
+  if (max_visible > kGameCount) max_visible = kGameCount;
+
+  int first = 0;
+  if (kGameCount > max_visible) {
+    first = selected - max_visible / 2;
+    if (first < 0) first = 0;
+    if (first > kGameCount - max_visible) first = kGameCount - max_visible;
+  }
+  const int last = first + max_visible;
+
+  int y = list_top;
+  for (int i = first; i < last; ++i) {
     if (i == selected) {
-      c.fillRect(10, y - 2, gfx::screen_w - 20, 14, 0x4208);
+      c.fillRect(10, y - 1, gfx::screen_w - 20, row_h - 1, 0x4208);
       c.setTextColor(TFT_YELLOW);
     } else {
       c.setTextColor(TFT_WHITE);
     }
     c.drawString(kGames[i].name, 18, y);
-    y += 16;
+    y += row_h;
   }
 
+  if (first > 0) {
+    int ax = gfx::screen_w - 8;
+    int ay = list_top - 1;
+    c.fillTriangle(ax - 4, ay + 4, ax + 4, ay + 4, ax, ay, 0xC618);
+  }
+  if (last < kGameCount) {
+    int ax = gfx::screen_w - 8;
+    int ay = list_top + max_visible * row_h - 4;
+    c.fillTriangle(ax - 4, ay, ax + 4, ay, ax, ay + 4, 0xC618);
+  }
+
+  c.drawFastHLine(0, help_top - 2, gfx::screen_w, 0x2104);
   c.setTextColor(0x8410);
   c.setTextDatum(bottom_center);
   c.drawString("A: select   B: next   PWR: off",
-               gfx::screen_w / 2, gfx::screen_h - 4);
+               gfx::screen_w / 2, gfx::screen_h - 2);
   return true;  // stay in menu
 }
 
